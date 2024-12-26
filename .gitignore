@@ -1,0 +1,16 @@
+# Debian paket dosyaları
+*.deb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Geçici dosyalar
+*~
+.*.swp
+.DS_Store
+
+# Derleme dizinleri
+build/
+dist/ 

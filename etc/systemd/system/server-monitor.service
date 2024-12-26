@@ -1,0 +1,13 @@
+[Unit]
+Description=Server Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -m server_monitor.monitor
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

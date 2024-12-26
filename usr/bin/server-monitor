@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+import sys
+import json
+import os
+import argparse
+
+def setup_config(api_url: str, api_key: str):
+    """Yapılandırmayı oluştur ve kaydet"""
+    # URL'nin başına https:// ekle
+    if not api_url.startswith(('http://', 'https://')):
+        api_url = 'https://' + api_url
+        
+    config = {
+        'api_url': api_url,
+        'api_key': api_key,
+        'check_interval': 30
+    }
+    
+    os.makedirs('/etc/server-monitor', exist_ok=True)
+    
+    with open('/etc/server-monitor/config.json', 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    # Servisi yeniden başlat
+    os.system('systemctl restart server-monitor')
+    print("Yapılandırma kaydedildi ve servis yeniden başlatıldı.")
+
+def main():
+    parser = argparse.ArgumentParser(description='Server Monitor yapılandırma aracı')
+    parser.add_argument('api_url', help='API URL (örn: edatra.requestcatcher.com)')
+    parser.add_argument('api_key', help='API anahtarı')
+    
+    args = parser.parse_args()
+    
+    try:
+        setup_config(args.api_url, args.api_key)
+    except Exception as e:
+        print(f"Hata: {str(e)}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

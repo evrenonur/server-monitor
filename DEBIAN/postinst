@@ -1,0 +1,30 @@
+#!/bin/bash
+set -e
+
+# Servis kullanıcısını oluştur
+if ! getent passwd server-monitor > /dev/null; then
+    useradd --system --no-create-home server-monitor
+fi
+
+# Yapılandırma dizinini oluştur
+mkdir -p /etc/server-monitor
+
+# Yapılandırma dosyası yoksa oluştur
+if [ ! -f /etc/server-monitor/config.json ]; then
+    echo '{
+        "api_url": "",
+        "api_key": "",
+        "check_interval": 300
+    }' > /etc/server-monitor/config.json
+fi
+
+# Yapılandırma dosyası izinlerini ayarla
+chown root:server-monitor /etc/server-monitor/config.json
+chmod 640 /etc/server-monitor/config.json
+
+# Servisi etkinleştir ve başlat
+systemctl daemon-reload
+systemctl enable server-monitor
+systemctl start server-monitor
+
+exit 0

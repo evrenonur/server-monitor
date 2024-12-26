@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+# Servisi durdur ve devre dışı bırak
+systemctl stop server-monitor
+systemctl disable server-monitor
+
+exit 0
