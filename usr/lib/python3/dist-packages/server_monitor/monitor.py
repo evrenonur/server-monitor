@@ -8,6 +8,9 @@ import socket
 import time
 from datetime import datetime
 import apt
+import os
+import fcntl
+import sys
 
 class ServerMonitor:
     def __init__(self, api_url: str, api_key: str):
@@ -15,6 +18,33 @@ class ServerMonitor:
             api_url = 'https://' + api_url
         self.api_url = api_url.rstrip('/')
         self.headers = {'Authorization': f'Bearer {api_key}'}
+
+    def is_apt_locked(self):
+        """APT kilit durumunu kontrol et"""
+        lock_files = [
+            "/var/lib/dpkg/lock",
+            "/var/lib/apt/lists/lock",
+            "/var/cache/apt/archives/lock",
+            "/var/lib/dpkg/lock-frontend"
+        ]
+        
+        for lock_file in lock_files:
+            if os.path.exists(lock_file):
+                try:
+                    with open(lock_file, 'r') as f:
+                        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.flock(f, fcntl.LOCK_UN)
+                except (IOError, BlockingIOError):
+                    return True
+        return False
+
+    def wait_for_apt(self):
+        """APT'nin serbest kalmasını bekle"""
+        attempt = 1
+        while self.is_apt_locked():
+            print(f"APT kilitli, bekleniyor... (Deneme {attempt})")
+            time.sleep(5)
+            attempt += 1
 
     def get_ip_addresses(self):
         ip_addresses = {}
@@ -33,6 +63,9 @@ class ServerMonitor:
     def get_package_updates(self):
         """Mevcut paket güncellemelerini kontrol et"""
         try:
+            # APT'nin serbest olmasını bekle
+            self.wait_for_apt()
+            
             # Paket listesini güncelle
             subprocess.run(['apt-get', 'update'], check=True, capture_output=True)
             
@@ -143,23 +176,43 @@ class ServerMonitor:
             return False
 
 def main():
-    while True:
-        try:
-            with open('/etc/server-monitor/config.json', 'r') as f:
-                config = json.load(f)
-            
-            monitor = ServerMonitor(
-                config['api_url'],
-                config['api_key']
-            )
-            monitor.send_system_info()
-            
-            interval = config.get('check_interval', 300)
-            time.sleep(interval)
-            
-        except Exception as e:
-            print(f"Hata oluştu: {str(e)}")
-            time.sleep(60)
+    """Ana program döngüsü"""
+    try:
+        # Yapılandırma dosyasını oku
+        with open('/etc/server-monitor/config.json', 'r') as f:
+            config = json.load(f)
+        
+        # Gerekli yapılandırma var mı kontrol et
+        if not config.get('api_url') or not config.get('api_key'):
+            print("Hata: API URL ve API Key yapılandırılmamış!")
+            print("Örnek: sudo server-monitor edatra.requestcatcher.com api_key")
+            sys.exit(1)
+        
+        # Monitor nesnesini oluştur
+        monitor = ServerMonitor(
+            config['api_url'],
+            config['api_key']
+        )
+        
+        # Ana döngü
+        while True:
+            try:
+                monitor.send_system_info()
+                time.sleep(config.get('check_interval', 300))
+            except Exception as e:
+                print(f"Hata oluştu: {str(e)}")
+                time.sleep(60)  # Hata durumunda 1 dakika bekle
+                
+    except FileNotFoundError:
+        print("Hata: Yapılandırma dosyası bulunamadı!")
+        print("Örnek: sudo server-monitor edatra.requestcatcher.com api_key")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print("Hata: Yapılandırma dosyası bozuk!")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Beklenmeyen hata: {str(e)}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main() 

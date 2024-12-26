@@ -5,6 +5,10 @@ After=network.target
 [Service]
 Type=simple
 User=root
+# Yapılandırma kontrolü
+ExecStartPre=/bin/sh -c 'test -f /etc/server-monitor/config.json && test -s /etc/server-monitor/config.json'
+ExecStartPre=/bin/sh -c 'test "$(jq -r .api_url /etc/server-monitor/config.json)" != ""'
+ExecStartPre=/bin/sh -c 'test "$(jq -r .api_key /etc/server-monitor/config.json)" != ""'
 ExecStart=/usr/bin/python3 -m server_monitor.monitor
 Restart=on-failure
 RestartSec=60

@@ -14,7 +14,7 @@ if [ ! -f /etc/server-monitor/config.json ]; then
     echo '{
         "api_url": "",
         "api_key": "",
-        "check_interval": 300
+        "check_interval": 30
     }' > /etc/server-monitor/config.json
 fi
 
@@ -22,9 +22,13 @@ fi
 chown root:server-monitor /etc/server-monitor/config.json
 chmod 640 /etc/server-monitor/config.json
 
-# Servisi etkinleştir ve başlat
+# Servisi yükle ama başlatma
 systemctl daemon-reload
 systemctl enable server-monitor
-systemctl start server-monitor
+
+# Yapılandırma mesajı göster
+echo "Server Monitor kuruldu fakat yapılandırılmadı."
+echo "Yapılandırmak için: sudo server-monitor API_URL API_KEY"
+echo "Örnek: sudo server-monitor onurevren.dev api_key"
 
 exit 0

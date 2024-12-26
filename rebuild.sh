@@ -11,8 +11,13 @@ sudo rm -rf /etc/server-monitor
 echo "Yeni paket oluşturuluyor..."
 sudo ./build.sh
 
+echo "Bağımlılıkları yükleniyor..."
+sudo apt-get install -y jq
+
 echo "Yeni paket kuruluyor..."
 sudo dpkg -i server-monitor-0.1.0.deb
-sudo apt-get install -f
+sudo apt-get install -f -y
 
 echo "İşlem tamamlandı!" 
+
+
