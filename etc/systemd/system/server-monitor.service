@@ -12,6 +12,9 @@ ExecStartPre=/bin/sh -c 'test "$(jq -r .api_key /etc/server-monitor/config.json)
 ExecStart=/usr/bin/python3 -m server_monitor.monitor
 Restart=on-failure
 RestartSec=60
+# Debug logları için ekleyin
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

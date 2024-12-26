@@ -11,13 +11,22 @@ import apt
 import os
 import fcntl
 import sys
+import logging
 
 class ServerMonitor:
     def __init__(self, api_url: str, api_key: str):
-        if not api_url.startswith(('http://', 'https://')):
-            api_url = 'https://' + api_url
+        """
+        ServerMonitor sınıfını başlat
+        
+        Args:
+            api_url: API'nin URL'i (http:// veya https:// ile başlamalı)
+            api_key: API anahtarı
+        """
+        # URL şemasını otomatik eklemeyi kaldır
         self.api_url = api_url.rstrip('/')
         self.headers = {'Authorization': f'Bearer {api_key}'}
+        # SSL doğrulamasını devre dışı bırak
+        self.verify_ssl = api_url.startswith('https://')
 
     def is_apt_locked(self):
         """APT kilit durumunu kontrol et"""
@@ -93,6 +102,50 @@ class ServerMonitor:
             print(f"Güncellemeler kontrol edilirken hata: {str(e)}")
             return {'count': 0, 'packages': []}
 
+    def get_process_info(self):
+        """Sistem process bilgilerini al"""
+        try:
+            processes = []
+            for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'status']):
+                try:
+                    pinfo = proc.info
+                    processes.append({
+                        'pid': pinfo['pid'],
+                        'name': pinfo['name'],
+                        'username': pinfo['username'],
+                        'cpu_percent': round(pinfo['cpu_percent'] or 0, 1),
+                        'memory_percent': round(pinfo['memory_percent'] or 0, 1),
+                        'status': pinfo['status']
+                    })
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+                
+            # CPU kullanımına göre sırala
+            processes = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)
+            
+            return {
+                'processes': processes,
+                'total_processes': len(processes),
+                'stats': {
+                    'running': len([p for p in processes if p['status'] == 'running']),
+                    'sleeping': len([p for p in processes if p['status'] == 'sleeping']),
+                    'stopped': len([p for p in processes if p['status'] == 'stopped']),
+                    'zombie': len([p for p in processes if p['status'] == 'zombie'])
+                }
+            }
+        except Exception as e:
+            logging.error(f"Process bilgileri alınırken hata oluştu: {str(e)}")
+            return {
+                'processes': [],
+                'total_processes': 0,
+                'stats': {
+                    'running': 0,
+                    'sleeping': 0,
+                    'stopped': 0,
+                    'zombie': 0
+                }
+            }
+
     def collect_system_info(self):
         # OS bilgilerini al
         try:
@@ -138,7 +191,8 @@ class ServerMonitor:
                 'disks': self.get_disk_info()
             },
             'timestamp': datetime.now().isoformat(),
-            'updates': self.get_package_updates()
+            'updates': self.get_package_updates(),
+            'processes': self.get_process_info()
         }
         
         return system_info
@@ -165,27 +219,48 @@ class ServerMonitor:
         try:
             system_info = self.collect_system_info()
             response = requests.post(
-                f"{self.api_url}/system-info",
+                f"{self.api_url}/api/system-info",
                 headers=self.headers,
-                json=system_info
+                json=system_info,
+                verify=False if self.api_url.startswith('https://') else True  # HTTPS için SSL doğrulamasını devre dışı bırak
             )
-            print(f"Bilgiler gönderildi: {response.status_code}")
+            logging.info(f"Bilgiler gönderildi: {response.status_code}")
             return True
         except Exception as e:
-            print(f"Hata oluştu: {str(e)}")
+            logging.error(f"Sistem bilgileri gönderilemedi: {str(e)}")
             return False
+    
+    def get_htop_info(self):
+        """htop bilgilerini al"""
+        try:
+            # Önce htop'un yüklü olup olmadığını kontrol et
+            if subprocess.run(['which', 'htop'], capture_output=True).returncode == 0:
+                htop_info = subprocess.check_output(['htop', '-b', '-d', '1']).decode('utf-8')
+                return htop_info
+            else:
+                logging.warning("htop yüklü değil. htop bilgileri alınamadı.")
+                return "htop not installed"
+        except Exception as e:
+            logging.error(f"htop bilgileri alınırken hata oluştu: {str(e)}")
+            return "htop error"
 
 def main():
     """Ana program döngüsü"""
+    # Loglama ayarlarını yapılandır
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
     try:
         # Yapılandırma dosyasını oku
         with open('/etc/server-monitor/config.json', 'r') as f:
             config = json.load(f)
+            logging.info(f"Yapılandırma yüklendi: {config}")
         
         # Gerekli yapılandırma var mı kontrol et
         if not config.get('api_url') or not config.get('api_key'):
-            print("Hata: API URL ve API Key yapılandırılmamış!")
-            print("Örnek: sudo server-monitor edatra.requestcatcher.com api_key")
+            logging.error("API URL ve API Key yapılandırılmamış!")
             sys.exit(1)
         
         # Monitor nesnesini oluştur
@@ -197,21 +272,16 @@ def main():
         # Ana döngü
         while True:
             try:
+                logging.debug("Sistem bilgileri gönderiliyor...")
                 monitor.send_system_info()
+                logging.info("Sistem bilgileri başarıyla gönderildi")
                 time.sleep(config.get('check_interval', 300))
             except Exception as e:
-                print(f"Hata oluştu: {str(e)}")
-                time.sleep(60)  # Hata durumunda 1 dakika bekle
+                logging.error(f"Hata oluştu: {str(e)}", exc_info=True)
+                time.sleep(60)
                 
     except FileNotFoundError:
-        print("Hata: Yapılandırma dosyası bulunamadı!")
-        print("Örnek: sudo server-monitor edatra.requestcatcher.com api_key")
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print("Hata: Yapılandırma dosyası bozuk!")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Beklenmeyen hata: {str(e)}")
+        logging.error("Yapılandırma dosyası bulunamadı!")
         sys.exit(1)
 
 if __name__ == '__main__':

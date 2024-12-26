@@ -27,7 +27,7 @@ def setup_config(api_url: str, api_key: str):
 
 def main():
     parser = argparse.ArgumentParser(description='Server Monitor yapılandırma aracı')
-    parser.add_argument('api_url', help='API URL (örn: edatra.requestcatcher.com)')
+    parser.add_argument('api_url', help='API URL (örn: onurevren.dev)')
     parser.add_argument('api_key', help='API anahtarı')
     
     args = parser.parse_args()
