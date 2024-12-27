@@ -192,7 +192,8 @@ class ServerMonitor:
             },
             'timestamp': datetime.now().isoformat(),
             'updates': self.get_package_updates(),
-            'processes': self.get_process_info()
+            'processes': self.get_process_info(),
+            'services': self.get_services_info()
         }
         
         return system_info
@@ -243,6 +244,72 @@ class ServerMonitor:
         except Exception as e:
             logging.error(f"htop bilgileri alınırken hata oluştu: {str(e)}")
             return "htop error"
+
+    def get_services_info(self):
+        """Systemd servis bilgilerini al"""
+        try:
+            # systemctl list-units --type=service komutu ile servisleri listele
+            cmd = ['systemctl', 'list-units', '--type=service', '--all', '--no-pager', '--no-legend', '--plain']
+            output = subprocess.check_output(cmd, universal_newlines=True)
+            
+            services = []
+            for line in output.splitlines():
+                # Her satırı parçalara ayır ve Unicode karakterleri temizle
+                parts = [part.strip() for part in line.strip().split(maxsplit=4) if part.strip()]
+                if len(parts) >= 4:
+                    service_name = parts[0].replace('●', '').strip()  # Unicode karakteri kaldır
+                    if not service_name.endswith('.service'):
+                        continue
+                        
+                    load_state = parts[1]
+                    active_state = parts[2]
+                    sub_state = parts[3]
+                    description = parts[4] if len(parts) > 4 else ''
+                    
+                    # Servis detaylarını al
+                    try:
+                        cmd_status = ['systemctl', 'show', service_name]
+                        status_output = subprocess.check_output(cmd_status, universal_newlines=True)
+                        
+                        details = {}
+                        for status_line in status_output.splitlines():
+                            if '=' in status_line:
+                                key, value = status_line.split('=', 1)
+                                details[key] = value
+                        
+                        services.append({
+                            'name': service_name,
+                            'load_state': load_state,
+                            'active_state': active_state,
+                            'sub_state': sub_state,
+                            'description': description or details.get('Description', ''),
+                            'main_pid': details.get('MainPID', '0'),
+                            'load_error': details.get('LoadError', ''),
+                            'fragment_path': details.get('FragmentPath', '')
+                        })
+                    except subprocess.CalledProcessError:
+                        continue
+                    
+            return {
+                'total_services': len(services),
+                'services': services,
+                'stats': {
+                    'active': len([s for s in services if s['active_state'] == 'active']),
+                    'inactive': len([s for s in services if s['active_state'] == 'inactive']),
+                    'failed': len([s for s in services if s['active_state'] == 'failed'])
+                }
+            }
+        except Exception as e:
+            logging.error(f"Servis bilgileri alınırken hata oluştu: {str(e)}")
+            return {
+                'total_services': 0,
+                'services': [],
+                'stats': {
+                    'active': 0,
+                    'inactive': 0,
+                    'failed': 0
+                }
+            }
 
 def main():
     """Ana program döngüsü"""
