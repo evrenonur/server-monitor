@@ -7,6 +7,7 @@ Linux sunucularınızı uzaktan izlemek ve yönetmek için geliştirilmiş araç
 * CPU, RAM ve disk kullanımı
 * Ağ arayüzleri takibi
 * Process yönetimi
+* Servis yönetimi
 * Paket güncelleme kontrolü
 * Otomatik veri gönderimi
 * SSL sertifika desteği
