@@ -1,5 +1,6 @@
 {
-    "api_url": "",
-    "api_key": "",
-    "check_interval": 30
+    "api_url": "https://monitor.example.com",
+    "api_key": "your-api-key",
+    "check_interval": 30,
+    "ws_port": 8765
 } 

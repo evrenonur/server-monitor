@@ -5,16 +5,25 @@ After=network.target
 [Service]
 Type=simple
 User=root
+Group=root
 # Yapılandırma kontrolü
 ExecStartPre=/bin/sh -c 'test -f /etc/server-monitor/config.json && test -s /etc/server-monitor/config.json'
 ExecStartPre=/bin/sh -c 'test "$(jq -r .api_url /etc/server-monitor/config.json)" != ""'
 ExecStartPre=/bin/sh -c 'test "$(jq -r .api_key /etc/server-monitor/config.json)" != ""'
-ExecStart=/usr/bin/python3 -m server_monitor.monitor
+# Yapılandırma dosyasından parametreleri al ve servisi başlat
+ExecStart=/bin/sh -c 'exec /usr/bin/python3 -m server_monitor.monitor "$(jq -r .api_url /etc/server-monitor/config.json)" "$(jq -r .api_key /etc/server-monitor/config.json)" --port "$(jq -r .ws_port /etc/server-monitor/config.json)"'
 Restart=on-failure
 RestartSec=60
 # Debug logları için ekleyin
 StandardOutput=journal
 StandardError=journal
+# Root yetkisi
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SYS_ADMIN
+NoNewPrivileges=no
+PrivateDevices=no
+PrivateTmp=no
+ProtectSystem=no
+ProtectHome=no
 
 [Install]
 WantedBy=multi-user.target

@@ -3,17 +3,51 @@ import sys
 import json
 import os
 import argparse
+import subprocess
 
-def setup_config(api_url: str, api_key: str):
+def setup_ufw(port: int):
+    """UFW kontrolü ve port kuralı ekleme"""
+    try:
+        # UFW yüklü mü kontrol et
+        result = subprocess.run(['which', 'ufw'], capture_output=True)
+        if result.returncode != 0:
+            print("UFW kuruluyor...")
+            subprocess.run(['apt-get', 'update'], check=True)
+            subprocess.run(['apt-get', 'install', '-y', 'ufw'], check=True)
+        
+        # UFW etkin mi kontrol et
+        result = subprocess.run(['ufw', 'status'], capture_output=True, text=True)
+        if 'Status: active' not in result.stdout:
+            print("UFW etkinleştiriliyor...")
+            subprocess.run(['ufw', '--force', 'enable'], check=True)
+        
+        # Eski WebSocket kuralını kaldır (varsa)
+        subprocess.run(['ufw', 'delete', 'allow', '8765/tcp'], capture_output=True)
+        
+        # Yeni port için kural ekle
+        print(f"WebSocket portu ({port}) için kural ekleniyor...")
+        subprocess.run(['ufw', 'allow', f'{port}/tcp', 'comment', 'Server Monitor WebSocket'], check=True)
+        print(f"Port {port} başarıyla açıldı.")
+        
+    except subprocess.CalledProcessError as e:
+        print(f"UFW yapılandırma hatası: {str(e)}")
+        sys.exit(1)
+
+def setup_config(api_url: str, api_key: str, ws_port: int = 8765):
     """Yapılandırmayı oluştur ve kaydet"""
     # URL'nin başına https:// ekle
     if not api_url.startswith(('http://', 'https://')):
         api_url = 'https://' + api_url
         
+    # Port numarasını kontrol et
+    if not (1024 <= ws_port <= 65535):
+        raise ValueError(f"Port numarası 1024-65535 arasında olmalıdır: {ws_port}")
+        
     config = {
         'api_url': api_url,
         'api_key': api_key,
-        'check_interval': 30
+        'check_interval': 30,
+        'ws_port': ws_port
     }
     
     os.makedirs('/etc/server-monitor', exist_ok=True)
@@ -21,19 +55,33 @@ def setup_config(api_url: str, api_key: str):
     with open('/etc/server-monitor/config.json', 'w') as f:
         json.dump(config, f, indent=2)
     
+    # UFW kuralını güncelle
+    setup_ufw(ws_port)
+    
     # Servisi yeniden başlat
     os.system('systemctl restart server-monitor')
     print("Yapılandırma kaydedildi ve servis yeniden başlatıldı.")
+    print(f"WebSocket sunucusu port: {ws_port}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Server Monitor yapılandırma aracı')
+    parser = argparse.ArgumentParser(
+        description='Server Monitor yapılandırma aracı',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
     parser.add_argument('api_url', help='API URL (örn: onurevren.dev)')
     parser.add_argument('api_key', help='API anahtarı')
+    parser.add_argument(
+        '--port', '-p',
+        type=int,
+        default=8765,
+        help='WebSocket port numarası'
+    )
     
     args = parser.parse_args()
     
     try:
-        setup_config(args.api_url, args.api_key)
+        setup_config(args.api_url, args.api_key, args.port)
     except Exception as e:
         print(f"Hata: {str(e)}")
         sys.exit(1)

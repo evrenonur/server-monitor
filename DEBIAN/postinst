@@ -1,34 +1,20 @@
 #!/bin/bash
 set -e
 
-# Servis kullanıcısını oluştur
-if ! getent passwd server-monitor > /dev/null; then
-    useradd --system --no-create-home server-monitor
-fi
-
-# Yapılandırma dizinini oluştur
-mkdir -p /etc/server-monitor
-
-# Yapılandırma dosyası yoksa oluştur
+# Config dosyası yoksa oluştur
 if [ ! -f /etc/server-monitor/config.json ]; then
+    mkdir -p /etc/server-monitor
     echo '{
-        "api_url": "",
-        "api_key": "",
-        "check_interval": 30
+        "api_url": "http://localhost",
+        "api_key": "default_key",
+        "check_interval": 30,
+        "ws_port": 8765
     }' > /etc/server-monitor/config.json
+    chmod 600 /etc/server-monitor/config.json
 fi
 
-# Yapılandırma dosyası izinlerini ayarla
-chown root:server-monitor /etc/server-monitor/config.json
-chmod 640 /etc/server-monitor/config.json
-
-# Servisi yükle ama başlatma
+# Servisi yeniden başlat
 systemctl daemon-reload
-systemctl enable server-monitor
+systemctl restart server-monitor
 
-# Yapılandırma mesajı göster
-echo "Server Monitor kuruldu fakat yapılandırılmadı."
-echo "Yapılandırmak için: sudo server-monitor API_URL API_KEY"
-echo "Örnek: sudo server-monitor onurevren.dev api_key"
-
-exit 0
+#DEBHELPER#
