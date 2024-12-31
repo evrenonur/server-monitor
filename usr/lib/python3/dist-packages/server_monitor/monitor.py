@@ -17,6 +17,12 @@ import websockets
 import hmac
 import hashlib
 import argparse
+import shutil
+import fnmatch
+import base64
+import magic
+import pwd
+import grp
 
 class ServerMonitor:
     def __init__(self, api_url: str, api_key: str):
@@ -140,7 +146,21 @@ class ServerMonitor:
             'docker-volume-create', # Docker volume oluştur
             'docker-volume-remove', # Docker volume sil
             'docker-volume-inspect',# Docker volume incele
-            'docker-volume-prune'   # Kullanılmayan volume'leri temizle
+            'docker-volume-prune',  # Kullanılmayan volume'leri temizle
+            'file-list',           # Dizin içeriğini listele
+            'file-info',           # Dosya bilgilerini getir
+            'file-read',           # Dosya içeriğini oku
+            'file-write',          # Dosya içeriğini yaz/güncelle
+            'file-delete',         # Dosya/dizin sil
+            'file-move',           # Dosya/dizin taşı
+            'file-copy',           # Dosya/dizin kopyala
+            'file-chmod',          # Dosya/dizin izinlerini değiştir
+            'file-chown',          # Dosya/dizin sahibini değiştir
+            'file-mkdir',          # Yeni dizin oluştur
+            'file-search',         # Dosya/dizin ara
+            'file-download',       # Dosya indir (base64)
+            'file-upload',         # Dosya yükle (base64)
+            'file-exists'          # Dosya/dizin varlık kontrolü
         }
 
         client = websocket.remote_address
@@ -658,9 +678,547 @@ class ServerMonitor:
                         # Kullanılmayan volume'leri temizle
                         force_param = '--force' if data.get('force') else ''
                         result = await self.execute_command(f"docker volume prune {force_param}")
-                    else:
-                        # Normal sistem komutu çalıştır
-                        result = await self.execute_command(command)
+                    elif command == 'file-list':
+                        # Dizin içeriğini listele
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dizin yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                items = []
+                                for item in os.listdir(path):
+                                    item_path = os.path.join(path, item)
+                                    stat = os.stat(item_path)
+                                    items.append({
+                                        'name': item,
+                                        'path': item_path,
+                                        'type': 'directory' if os.path.isdir(item_path) else 'file',
+                                        'size': stat.st_size,
+                                        'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                                        'accessed': datetime.fromtimestamp(stat.st_atime).isoformat(),
+                                        'permissions': oct(stat.st_mode)[-3:],
+                                        'owner': stat.st_uid,
+                                        'group': stat.st_gid
+                                    })
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'items': items
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-info':
+                        # Dosya bilgilerini getir
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                stat = os.stat(path)
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'name': os.path.basename(path),
+                                        'path': path,
+                                        'type': 'directory' if os.path.isdir(path) else 'file',
+                                        'size': stat.st_size,
+                                        'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                                        'accessed': datetime.fromtimestamp(stat.st_atime).isoformat(),
+                                        'permissions': oct(stat.st_mode)[-3:],
+                                        'owner': stat.st_uid,
+                                        'group': stat.st_gid,
+                                        'is_symlink': os.path.islink(path),
+                                        'mimetype': magic.from_file(path, mime=True) if os.path.isfile(path) else None
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-read':
+                        # Dosya içeriğini oku
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                if not os.path.isfile(path):
+                                    result = {
+                                        'success': False,
+                                        'error': 'Belirtilen yol bir dosya değil',
+                                        'command': command
+                                    }
+                                else:
+                                    with open(path, 'rb') as f:
+                                        content = f.read()
+                                        # Base64 encode binary content
+                                        content_b64 = base64.b64encode(content).decode('utf-8')
+                                        result = {
+                                            'success': True,
+                                            'data': {
+                                                'path': path,
+                                                'size': len(content),
+                                                'content': content_b64,
+                                                'encoding': 'base64'
+                                            },
+                                            'command': command
+                                        }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-write':
+                        # Dosya içeriğini yaz/güncelle
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                mode = int(str(data.get('mode', '0644')), 8)
+                                
+                                # Üst dizini oluştur
+                                os.makedirs(os.path.dirname(path), exist_ok=True)
+                                
+                                # İçeriği decode et
+                                content = b''
+                                if 'content' in data:
+                                    content = base64.b64decode(data['content'])
+                                
+                                # Dosyayı yaz
+                                write_mode = 'ab' if data.get('append', False) else 'wb'
+                                with open(path, write_mode) as f:
+                                    f.write(content)
+                                
+                                # İzinleri ayarla
+                                os.chmod(path, mode)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'size': len(content),
+                                        'mode': oct(mode)[2:]
+                                    },
+                                    'command': command
+                                }
+                            except PermissionError:
+                                result = {
+                                    'success': False,
+                                    'error': f'Dosya oluşturmak/güncellemek için yetkiniz yok: {path}',
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-delete':
+                        # Dosya/dizin sil
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya/dizin yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                if os.path.isdir(path):
+                                    if data.get('recursive', False):
+                                        shutil.rmtree(path)
+                                    else:
+                                        os.rmdir(path)
+                                else:
+                                    os.remove(path)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'type': 'directory' if os.path.isdir(path) else 'file'
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-move':
+                        # Dosya/dizin taşı
+                        if 'source' not in data or 'target' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Kaynak ve hedef yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                source = os.path.abspath(data['source'])
+                                target = os.path.abspath(data['target'])
+                                shutil.move(source, target)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'source': source,
+                                        'target': target
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-copy':
+                        # Dosya/dizin kopyala
+                        if 'source' not in data or 'target' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Kaynak ve hedef yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                source = os.path.abspath(data['source'])
+                                target = os.path.abspath(data['target'])
+                                
+                                if os.path.isdir(source):
+                                    shutil.copytree(source, target)
+                                else:
+                                    shutil.copy2(source, target)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'source': source,
+                                        'target': target
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-chmod':
+                        # Dosya/dizin izinlerini değiştir
+                        if 'path' not in data or 'mode' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu ve izin modu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                mode = int(str(data['mode']), 8)
+                                os.chmod(path, mode)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'mode': oct(mode)[2:]
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-chown':
+                        # Dosya/dizin sahibini değiştir
+                        if 'path' not in data or 'user' not in data or 'group' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu, kullanıcı ve grup bilgisi gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                uid = pwd.getpwnam(data['user']).pw_uid
+                                gid = grp.getgrnam(data['group']).gr_gid
+                                os.chown(path, uid, gid)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'user': data['user'],
+                                        'group': data['group']
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-mkdir':
+                        # Yeni dizin oluştur
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dizin yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                mode = int(str(data.get('mode', '0755')), 8)
+                                
+                                # Eğer bu yolda bir dosya varsa hata ver
+                                if os.path.isfile(path):
+                                    result = {
+                                        'success': False,
+                                        'error': f'Bu yolda bir dosya var: {path}',
+                                        'command': command
+                                    }
+                                # Eğer bu yolda bir dizin varsa ve exist_ok false ise hata ver
+                                elif os.path.isdir(path) and not data.get('exist_ok', False):
+                                    result = {
+                                        'success': False,
+                                        'error': f'Bu yolda bir dizin var: {path}',
+                                        'command': command
+                                    }
+                                # Dizin yoksa veya exist_ok true ise oluştur
+                                else:
+                                    os.makedirs(path, mode=mode, exist_ok=data.get('exist_ok', False))
+                                    result = {
+                                        'success': True,
+                                        'data': {
+                                            'path': path,
+                                            'mode': oct(mode)[2:]
+                                        },
+                                        'command': command
+                                    }
+                            except PermissionError:
+                                result = {
+                                    'success': False,
+                                    'error': f'Klasör oluşturmak için yetkiniz yok: {path}',
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-search':
+                        # Dosya/dizin ara
+                        if 'path' not in data or 'pattern' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Arama yolu ve deseni gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                pattern = data['pattern']
+                                recursive = data.get('recursive', True)
+                                
+                                matches = []
+                                if recursive:
+                                    for root, dirs, files in os.walk(path):
+                                        for item in dirs + files:
+                                            if fnmatch.fnmatch(item, pattern):
+                                                item_path = os.path.join(root, item)
+                                                stat = os.stat(item_path)
+                                                matches.append({
+                                                    'name': item,
+                                                    'path': item_path,
+                                                    'type': 'directory' if os.path.isdir(item_path) else 'file',
+                                                    'size': stat.st_size,
+                                                    'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                                                })
+                                else:
+                                    for item in os.listdir(path):
+                                        if fnmatch.fnmatch(item, pattern):
+                                            item_path = os.path.join(path, item)
+                                            stat = os.stat(item_path)
+                                            matches.append({
+                                                'name': item,
+                                                'path': item_path,
+                                                'type': 'directory' if os.path.isdir(item_path) else 'file',
+                                                'size': stat.st_size,
+                                                'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                                            })
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'pattern': pattern,
+                                        'matches': matches
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-download':
+                        # Dosya indir
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                if not os.path.isfile(path):
+                                    result = {
+                                        'success': False,
+                                        'error': 'Belirtilen yol bir dosya değil',
+                                        'command': command
+                                    }
+                                else:
+                                    with open(path, 'rb') as f:
+                                        content = f.read()
+                                        content_b64 = base64.b64encode(content).decode('utf-8')
+                                        result = {
+                                            'success': True,
+                                            'data': {
+                                                'name': os.path.basename(path),
+                                                'path': path,
+                                                'size': len(content),
+                                                'content': content_b64,
+                                                'encoding': 'base64'
+                                            },
+                                            'command': command
+                                        }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+
+                    elif command == 'file-upload':
+                        # Dosya yükle
+                        if 'path' not in data or 'content' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya yolu ve içerik gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                content = base64.b64decode(data['content'])
+                                
+                                os.makedirs(os.path.dirname(path), exist_ok=True)
+                                with open(path, 'wb') as f:
+                                    f.write(content)
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'path': path,
+                                        'size': len(content)
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
+                    
+                    elif command == 'file-exists':
+                        # Dosya/dizin varlık kontrolü
+                        if 'path' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Dosya/dizin yolu gerekli',
+                                'command': command
+                            }
+                        else:
+                            try:
+                                path = os.path.abspath(data['path'])
+                                exists = os.path.exists(path)
+                                is_file = os.path.isfile(path) if exists else False
+                                is_dir = os.path.isdir(path) if exists else False
+                                is_link = os.path.islink(path) if exists else False
+                                
+                                result = {
+                                    'success': True,
+                                    'data': {
+                                        'exists': exists,
+                                        'path': path,
+                                        'type': 'file' if is_file else ('directory' if is_dir else ('link' if is_link else None)),
+                                        'is_file': is_file,
+                                        'is_dir': is_dir,
+                                        'is_link': is_link,
+                                        'readable': os.access(path, os.R_OK) if exists else False,
+                                        'writable': os.access(path, os.W_OK) if exists else False,
+                                        'executable': os.access(path, os.X_OK) if exists else False
+                                    },
+                                    'command': command
+                                }
+                            except Exception as e:
+                                result = {
+                                    'success': False,
+                                    'error': str(e),
+                                    'command': command
+                                }
                     
                     # Sonucu gönder
                     await websocket.send(json.dumps(result))
