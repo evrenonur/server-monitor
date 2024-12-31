@@ -12,6 +12,9 @@ Linux sunucularınızı uzaktan izlemek ve yönetmek için geliştirilmiş araç
 * Otomatik veri gönderimi
 * SSL sertifika desteği
 * WebSocket üzerinden uzaktan komut çalıştırma
+* Docker desteği
+* Dosya yönetimi
+
 
 ## 📥 Kurulum
 
