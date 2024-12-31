@@ -48,27 +48,36 @@ class ServerMonitor:
                 logging.warning(f"Geçersiz port değeri: {kwargs['ws_port']}. Varsayılan port kullanılacak: 8765")
 
     async def verify_client(self, websocket):
-        """WebSocket bağlantısı için API anahtarı doğrulaması yap"""
+        """WebSocket bağlantısı için API üzerinden token doğrulaması yap"""
         try:
-            auth_message = await websocket.recv()
-            auth_data = json.loads(auth_message)
+            # URL'den token'ı al
+            query_string = websocket.path.split('?')[-1]
+            params = dict(param.split('=') for param in query_string.split('&')) if '?' in websocket.path else {}
+            token = params.get('token')
             
-            if 'api_key' not in auth_data:
-                await websocket.close(1008, 'API anahtarı gerekli')
+            if not token:
+                await websocket.close(1008, 'Token gerekli')
                 return False
                 
-            # HMAC ile API anahtarı doğrulaması
-            expected_key = hmac.new(
-                self.api_key.encode(),
-                auth_data.get('timestamp', '').encode(),
-                hashlib.sha256
-            ).hexdigest()
-            
-            if hmac.compare_digest(auth_data['api_key'], expected_key):
-                return True
-            else:
-                await websocket.close(1008, 'Geçersiz API anahtarı')
+            # API'den token doğrulaması
+            try:
+                response = requests.get(
+                    f"{self.api_url}/api/validate-token",
+                    headers={'Authorization': f"Bearer {token}"},
+                    verify=False if self.api_url.startswith('https://') else True
+                )
+                
+                if response.status_code == 200 and response.json().get('valid'):
+                    return True
+                else:
+                    await websocket.close(1008, 'Geçersiz token')
+                    return False
+                    
+            except Exception as e:
+                logging.error(f"Token doğrulama hatası: {str(e)}")
+                await websocket.close(1011, 'Token doğrulama hatası')
                 return False
+                
         except Exception as e:
             logging.error(f"Doğrulama hatası: {str(e)}")
             await websocket.close(1011, 'Doğrulama hatası')
