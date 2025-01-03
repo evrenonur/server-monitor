@@ -160,7 +160,17 @@ class ServerMonitor:
             'file-search',         # Dosya/dizin ara
             'file-download',       # Dosya indir (base64)
             'file-upload',         # Dosya yükle (base64)
-            'file-exists'          # Dosya/dizin varlık kontrolü
+            'file-exists',          # Dosya/dizin varlık kontrolü
+            # UFW Komutları
+            'ufw-status',          # UFW durumunu göster
+            'ufw-enable',          # UFW'yi etkinleştir
+            'ufw-disable',         # UFW'yi devre dışı bırak
+            'ufw-reset',           # UFW kurallarını sıfırla
+            'ufw-add-rule',        # Yeni kural ekle
+            'ufw-delete-rule',     # Kural sil
+            'ufw-list-rules',      # Kuralları listele
+            'ufw-app-list',        # Uygulama profillerini listele
+            'ufw-app-info'         # Uygulama profil detayı
         }
 
         client = websocket.remote_address
@@ -1217,6 +1227,171 @@ class ServerMonitor:
                                 result = {
                                     'success': False,
                                     'error': str(e),
+                                    'command': command
+                                }
+                    
+                    elif command == 'ufw-status':
+                        # UFW durumunu göster
+                        result = await self.execute_command("ufw status verbose")
+                        if result['success']:
+                            # Çıktıyı ayrıştır
+                            lines = result['stdout'].split('\n')
+                            status_info = {
+                                'status': 'inactive',
+                                'logging': 'off',
+                                'default_incoming': 'deny',
+                                'default_outgoing': 'allow',
+                                'rules': []
+                            }
+                            
+                            for line in lines:
+                                line = line.strip()
+                                if line.startswith('Status:'):
+                                    status_info['status'] = line.split(':')[1].strip().lower()
+                                elif line.startswith('Logging:'):
+                                    status_info['logging'] = line.split(':')[1].strip().lower()
+                                elif line.startswith('Default:'):
+                                    parts = line.split()
+                                    if 'incoming' in line.lower():
+                                        status_info['default_incoming'] = parts[-1].lower()
+                                    elif 'outgoing' in line.lower():
+                                        status_info['default_outgoing'] = parts[-1].lower()
+                                elif 'ALLOW' in line or 'DENY' in line:
+                                    # Kural satırını ayrıştır
+                                    rule = {
+                                        'action': 'ALLOW' if 'ALLOW' in line else 'DENY',
+                                        'direction': 'IN' if 'IN' in line else 'OUT',
+                                        'rule': line
+                                    }
+                                    status_info['rules'].append(rule)
+                            
+                            result = {
+                                'success': True,
+                                'data': status_info,
+                                'command': command
+                            }
+
+                    elif command == 'ufw-enable':
+                        # UFW'yi etkinleştir
+                        # Önce 'yes' komutunu çalıştır ve çıktısını ufw enable'a pipe et
+                        result = await self.execute_command("echo 'y' | ufw enable")
+
+                    elif command == 'ufw-disable':
+                        # UFW'yi devre dışı bırak
+                        result = await self.execute_command("ufw disable")
+
+                    elif command == 'ufw-reset':
+                        # UFW kurallarını sıfırla
+                        # Önce 'yes' komutunu çalıştır ve çıktısını ufw reset'e pipe et
+                        result = await self.execute_command("echo 'y' | ufw reset")
+
+                    elif command == 'ufw-add-rule':
+                        # Yeni kural ekle
+                        if 'rule' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Kural parametresi gerekli',
+                                'command': command
+                            }
+                        else:
+                            # Kural formatını kontrol et
+                            rule = data['rule']
+                            valid_actions = ['allow', 'deny', 'reject', 'limit']
+                            valid_directions = ['in', 'out']
+                            
+                            # Temel kural doğrulama
+                            if any(action in rule.lower() for action in valid_actions):
+                                # Önce 'yes' komutunu çalıştır ve çıktısını ufw komutuna pipe et
+                                result = await self.execute_command(f"echo 'y' | ufw {rule}")
+                            else:
+                                result = {
+                                    'success': False,
+                                    'error': 'Geçersiz kural formatı',
+                                    'command': command
+                                }
+
+                    elif command == 'ufw-delete-rule':
+                        # Kural sil
+                        if 'rule' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Kural parametresi gerekli',
+                                'command': command
+                            }
+                        else:
+                            # Kural numarası veya tam kural ile silme
+                            rule = data['rule']
+                            if str(rule).isdigit():
+                                result = await self.execute_command(f"echo 'y' | ufw delete {rule}")
+                            else:
+                                result = await self.execute_command(f"echo 'y' | ufw delete {rule}")
+
+                    elif command == 'ufw-list-rules':
+                        # Kuralları listele
+                        result = await self.execute_command("ufw status numbered")
+                        if result['success']:
+                            # Çıktıyı ayrıştır
+                            lines = result['stdout'].split('\n')
+                            rules = []
+                            for line in lines:
+                                if line.strip().startswith('['):
+                                    # Kural satırını ayrıştır
+                                    rule = {
+                                        'number': line.split(']')[0].strip('['),
+                                        'rule': line.split(']')[1].strip()
+                                    }
+                                    rules.append(rule)
+                            
+                            result = {
+                                'success': True,
+                                'data': rules,
+                                'command': command
+                            }
+
+                    elif command == 'ufw-app-list':
+                        # Uygulama profillerini listele
+                        result = await self.execute_command("ufw app list")
+                        if result['success']:
+                            # Çıktıyı ayrıştır
+                            apps = [app.strip() for app in result['stdout'].split('\n') if app.strip()]
+                            result = {
+                                'success': True,
+                                'data': apps,
+                                'command': command
+                            }
+
+                    elif command == 'ufw-app-info':
+                        # Uygulama profil detayı
+                        if 'app' not in data:
+                            result = {
+                                'success': False,
+                                'error': 'Uygulama adı gerekli',
+                                'command': command
+                            }
+                        else:
+                            result = await self.execute_command(f"ufw app info {data['app']}")
+                            if result['success']:
+                                # Çıktıyı ayrıştır
+                                lines = result['stdout'].split('\n')
+                                app_info = {
+                                    'title': '',
+                                    'description': '',
+                                    'ports': []
+                                }
+                                
+                                for line in lines:
+                                    line = line.strip()
+                                    if line.startswith('Title:'):
+                                        app_info['title'] = line.split(':', 1)[1].strip()
+                                    elif line.startswith('Description:'):
+                                        app_info['description'] = line.split(':', 1)[1].strip()
+                                    elif line.startswith('Ports:'):
+                                        ports = line.split(':', 1)[1].strip()
+                                        app_info['ports'] = [p.strip() for p in ports.split(',')]
+                                
+                                result = {
+                                    'success': True,
+                                    'data': app_info,
                                     'command': command
                                 }
                     
