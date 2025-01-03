@@ -23,6 +23,7 @@ import base64
 import magic
 import pwd
 import grp
+from .utils.docker_utils import get_docker_info, get_docker_images, get_docker_volumes, execute_docker_command
 
 class ServerMonitor:
     def __init__(self, api_url: str, api_key: str):
@@ -484,7 +485,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker start {data['container']}")
+                            result = await execute_docker_command(f"docker start {data['container']}")
+                    
                     elif command == 'docker-stop':
                         # Container'ı durdur
                         if 'container' not in data:
@@ -494,7 +496,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker stop {data['container']}")
+                            result = await execute_docker_command(f"docker stop {data['container']}")
+                    
                     elif command == 'docker-restart':
                         # Container'ı yeniden başlat
                         if 'container' not in data:
@@ -504,7 +507,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker restart {data['container']}")
+                            result = await execute_docker_command(f"docker restart {data['container']}")
+                    
                     elif command == 'docker-remove':
                         # Container'ı sil
                         if 'container' not in data:
@@ -515,8 +519,9 @@ class ServerMonitor:
                             }
                         else:
                             # Önce container'ı durdur, sonra sil
-                            await self.execute_command(f"docker stop {data['container']}")
-                            result = await self.execute_command(f"docker rm {data['container']}")
+                            await execute_docker_command(f"docker stop {data['container']}")
+                            result = await execute_docker_command(f"docker rm {data['container']}")
+                    
                     elif command == 'docker-pause':
                         # Container'ı duraklat
                         if 'container' not in data:
@@ -526,7 +531,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker pause {data['container']}")
+                            result = await execute_docker_command(f"docker pause {data['container']}")
+                    
                     elif command == 'docker-unpause':
                         # Container'ı devam ettir
                         if 'container' not in data:
@@ -536,7 +542,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker unpause {data['container']}")
+                            result = await execute_docker_command(f"docker unpause {data['container']}")
+                    
                     elif command == 'docker-image-pull':
                         # Docker imajı çek
                         if 'image' not in data:
@@ -546,7 +553,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker pull {data['image']}")
+                            result = await execute_docker_command(f"docker pull {data['image']}")
+                    
                     elif command == 'docker-image-remove':
                         # Docker imajı sil
                         if 'image' not in data:
@@ -557,7 +565,7 @@ class ServerMonitor:
                             }
                         else:
                             # Önce imajı kullanan container'ları kontrol et
-                            check_containers = await self.execute_command(f"docker ps -a --filter ancestor={data['image']} --format '{{{{.ID}}}}'")
+                            check_containers = await execute_docker_command(f"docker ps -a --filter ancestor={data['image']} --format '{{{{.ID}}}}'")
                             if check_containers['stdout'].strip():
                                 result = {
                                     'success': False,
@@ -568,7 +576,8 @@ class ServerMonitor:
                             else:
                                 # Force parametresi varsa zorla sil
                                 force_param = '--force' if data.get('force') else ''
-                                result = await self.execute_command(f"docker rmi {force_param} {data['image']}")
+                                result = await execute_docker_command(f"docker rmi {force_param} {data['image']}")
+                    
                     elif command == 'docker-image-tag':
                         # Docker imajı etiketle
                         if 'source' not in data or 'target' not in data:
@@ -578,7 +587,8 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            result = await self.execute_command(f"docker tag {data['source']} {data['target']}")
+                            result = await execute_docker_command(f"docker tag {data['source']} {data['target']}")
+                    
                     elif command == 'docker-image-inspect':
                         # Docker imajı detaylı inceleme
                         if 'image' not in data:
@@ -588,7 +598,7 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            inspect_result = await self.execute_command(f"docker image inspect {data['image']}")
+                            inspect_result = await execute_docker_command(f"docker image inspect {data['image']}")
                             if inspect_result['success']:
                                 try:
                                     # JSON çıktısını parse et
@@ -606,6 +616,7 @@ class ServerMonitor:
                                     }
                             else:
                                 result = inspect_result
+                    
                     elif command == 'docker-volume-create':
                         # Docker volume oluştur
                         if 'name' not in data:
@@ -627,7 +638,7 @@ class ServerMonitor:
                                 for key, value in data['labels'].items():
                                     labels += f" --label {key}={value}"
                             
-                            result = await self.execute_command(
+                            result = await execute_docker_command(
                                 f"docker volume create {driver}{opts}{labels} {data['name']}"
                             )
                     
@@ -641,7 +652,7 @@ class ServerMonitor:
                             }
                         else:
                             # Önce volume'ü kullanan container'ları kontrol et
-                            check_containers = await self.execute_command(
+                            check_containers = await execute_docker_command(
                                 f"docker ps -a --filter volume={data['name']} --format '{{{{.ID}}}}'"
                             )
                             if check_containers['stdout'].strip():
@@ -654,7 +665,7 @@ class ServerMonitor:
                             else:
                                 # Force parametresi varsa zorla sil
                                 force_param = '--force' if data.get('force') else ''
-                                result = await self.execute_command(f"docker volume rm {force_param} {data['name']}")
+                                result = await execute_docker_command(f"docker volume rm {force_param} {data['name']}")
                     
                     elif command == 'docker-volume-inspect':
                         # Docker volume detaylı inceleme
@@ -665,7 +676,7 @@ class ServerMonitor:
                                 'command': command
                             }
                         else:
-                            inspect_result = await self.execute_command(f"docker volume inspect {data['name']}")
+                            inspect_result = await execute_docker_command(f"docker volume inspect {data['name']}")
                             if inspect_result['success']:
                                 try:
                                     # JSON çıktısını parse et
@@ -687,7 +698,7 @@ class ServerMonitor:
                     elif command == 'docker-volume-prune':
                         # Kullanılmayan volume'leri temizle
                         force_param = '--force' if data.get('force') else ''
-                        result = await self.execute_command(f"docker volume prune {force_param}")
+                        result = await execute_docker_command(f"docker volume prune {force_param}")
                     elif command == 'file-list':
                         # Dizin içeriğini listele
                         if 'path' not in data:
@@ -1816,182 +1827,15 @@ class ServerMonitor:
 
     def get_docker_info(self):
         """Docker bilgilerini al"""
-        try:
-            # Docker çalışıyor mu kontrol et
-            docker_ps = subprocess.run(['docker', 'ps', '-a', '--format', '{{json .}}'], capture_output=True, text=True)
-            if docker_ps.returncode != 0:
-                return {
-                    'error': 'Docker servis durumu kontrol edilemiyor',
-                    'running': False
-                }
-
-            # Docker sistem bilgilerini al
-            docker_info = subprocess.run(['docker', 'info', '--format', '{{json .}}'], capture_output=True, text=True)
-            info = json.loads(docker_info.stdout) if docker_info.returncode == 0 else {}
-
-            # Tüm container'ları al (çalışan, durmuş, vs.)
-            containers = []
-            if docker_ps.stdout:
-                for line in docker_ps.stdout.strip().split('\n'):
-                    if line:
-                        container = json.loads(line)
-                        # Container detaylarını al
-                        container_inspect = subprocess.run(
-                            ['docker', 'inspect', container['ID']], 
-                            capture_output=True, text=True
-                        )
-                        if container_inspect.returncode == 0:
-                            details = json.loads(container_inspect.stdout)[0]
-                            container['Created'] = details.get('Created')
-                            container['State'] = details.get('State', {})
-                            container['Config'] = {
-                                'Image': details.get('Config', {}).get('Image'),
-                                'Cmd': details.get('Config', {}).get('Cmd'),
-                                'Entrypoint': details.get('Config', {}).get('Entrypoint'),
-                                'Env': details.get('Config', {}).get('Env'),
-                                'Labels': details.get('Config', {}).get('Labels')
-                            }
-                            container['NetworkSettings'] = {
-                                'IPAddress': details.get('NetworkSettings', {}).get('IPAddress'),
-                                'Ports': details.get('NetworkSettings', {}).get('Ports'),
-                                'Networks': details.get('NetworkSettings', {}).get('Networks')
-                            }
-                            container['Mounts'] = details.get('Mounts', [])
-                            
-                            # Eğer container çalışıyorsa stats'ları al
-                            if container['State'].get('Running'):
-                                container_stats = subprocess.run(
-                                    ['docker', 'stats', container['ID'], '--no-stream', '--format', '{{json .}}'],
-                                    capture_output=True, text=True
-                                )
-                                if container_stats.returncode == 0 and container_stats.stdout:
-                                    stats = json.loads(container_stats.stdout)
-                                    container['stats'] = stats
-                            else:
-                                container['stats'] = None
-
-                        containers.append(container)
-
-            # Docker disk kullanımı
-            docker_df = subprocess.run(['docker', 'system', 'df', '--format', '{{json .}}'], capture_output=True, text=True)
-            disk_usage = []
-            if docker_df.returncode == 0:
-                for line in docker_df.stdout.strip().split('\n'):
-                    if line:
-                        disk_usage.append(json.loads(line))
-
-            return {
-                'running': True,
-                'version': info.get('ServerVersion', 'unknown'),
-                'containers': {
-                    'total': info.get('Containers', 0),
-                    'running': info.get('ContainersRunning', 0),
-                    'paused': info.get('ContainersPaused', 0),
-                    'stopped': info.get('ContainersStopped', 0)
-                },
-                'images': info.get('Images', 0),
-                'driver': info.get('Driver', 'unknown'),
-                'memory_limit': info.get('MemoryLimit', False),
-                'swap_limit': info.get('SwapLimit', False),
-                'kernel_version': info.get('KernelVersion', 'unknown'),
-                'operating_system': info.get('OperatingSystem', 'unknown'),
-                'cpu_count': info.get('NCPU', 0),
-                'total_memory': info.get('MemTotal', 0),
-                'disk_usage': disk_usage,
-                'all_containers': containers  # Tüm container'lar burada
-            }
-        except Exception as e:
-            logging.error(f"Docker bilgileri alınırken hata oluştu: {str(e)}")
-            return {
-                'error': str(e),
-                'running': False
-            }
+        return get_docker_info()
 
     def get_docker_images(self):
         """Docker imajlarını listele"""
-        try:
-            # Docker imajlarını al
-            images = subprocess.run(['docker', 'images', '--format', '{{json .}}'], capture_output=True, text=True)
-            if images.returncode != 0:
-                return {
-                    'error': 'Docker imajları listelenemiyor',
-                    'success': False
-                }
-
-            image_list = []
-            if images.stdout:
-                for line in images.stdout.strip().split('\n'):
-                    if line:
-                        image = json.loads(line)
-                        # İmaj detaylarını al
-                        image_inspect = subprocess.run(
-                            ['docker', 'image', 'inspect', image['ID']], 
-                            capture_output=True, text=True
-                        )
-                        if image_inspect.returncode == 0:
-                            details = json.loads(image_inspect.stdout)[0]
-                            image['Created'] = details.get('Created')
-                            image['Architecture'] = details.get('Architecture')
-                            image['Os'] = details.get('Os')
-                            image['Author'] = details.get('Author', '')
-                            image['Labels'] = details.get('Config', {}).get('Labels', {})
-                        
-                        image_list.append(image)
-
-            return {
-                'success': True,
-                'images': image_list,
-                'total': len(image_list)
-            }
-        except Exception as e:
-            logging.error(f"Docker imajları alınırken hata oluştu: {str(e)}")
-            return {
-                'error': str(e),
-                'success': False
-            }
+        return get_docker_images()
 
     def get_docker_volumes(self):
         """Docker volume'lerini listele"""
-        try:
-            # Docker volume'lerini al
-            volumes = subprocess.run(['docker', 'volume', 'ls', '--format', '{{json .}}'], capture_output=True, text=True)
-            if volumes.returncode != 0:
-                return {
-                    'error': 'Docker volume\'leri listelenemiyor',
-                    'success': False
-                }
-
-            volume_list = []
-            if volumes.stdout:
-                for line in volumes.stdout.strip().split('\n'):
-                    if line:
-                        volume = json.loads(line)
-                        # Volume detaylarını al
-                        volume_inspect = subprocess.run(
-                            ['docker', 'volume', 'inspect', volume['Name']], 
-                            capture_output=True, text=True
-                        )
-                        if volume_inspect.returncode == 0:
-                            details = json.loads(volume_inspect.stdout)[0]
-                            volume['Driver'] = details.get('Driver')
-                            volume['Mountpoint'] = details.get('Mountpoint')
-                            volume['Labels'] = details.get('Labels', {})
-                            volume['Options'] = details.get('Options', {})
-                            volume['Scope'] = details.get('Scope')
-                        
-                        volume_list.append(volume)
-
-            return {
-                'success': True,
-                'volumes': volume_list,
-                'total': len(volume_list)
-            }
-        except Exception as e:
-            logging.error(f"Docker volume'leri alınırken hata oluştu: {str(e)}")
-            return {
-                'error': str(e),
-                'success': False
-            }
+        return get_docker_volumes()
 
 def main():
     """Ana program döngüsü"""
