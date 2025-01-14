@@ -104,41 +104,7 @@ Gereksinimler:
 ./rebuild.sh
 ```
 
-## 🌐 WebSocket API Kullanımı
 
-WebSocket üzerinden komut çalıştırmak için önce doğrulama yapmanız gerekir:
-
-```python
-import websockets
-import json
-import time
-import hmac
-import hashlib
-
-async def send_command(api_key: str, command: str, ws_port: int = 8765):
-    uri = f"ws://sunucu:{ws_port}"
-    
-    async with websockets.connect(uri) as websocket:
-        # Doğrulama
-        timestamp = str(int(time.time()))
-        auth_key = hmac.new(
-            api_key.encode(),
-            timestamp.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
-        await websocket.send(json.dumps({
-            'api_key': auth_key,
-            'timestamp': timestamp
-        }))
-        
-        # Komutu gönder
-        await websocket.send(json.dumps({
-            'command': command
-        }))
-        
-        # Yanıtı al
-        response = await websocket.recv()
         return json.loads(response)
 ```
 
