@@ -104,9 +104,3 @@ Gereksinimler:
 ./rebuild.sh
 ```
 
-
-        return json.loads(response)
-```
-
----
-Server Monitor v0.1.0 🚀
