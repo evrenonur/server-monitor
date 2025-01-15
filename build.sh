@@ -26,7 +26,7 @@ chmod -R 755 "$BUILD_DIR/usr"
 chmod -R 755 "$BUILD_DIR/etc"
 
 # Debian paketini oluştur
-dpkg-deb --build "$BUILD_DIR" "$PKG_NAME-$PKG_VERSION.deb"
+dpkg-deb --build --root-owner-group "$BUILD_DIR" "$PKG_NAME-$PKG_VERSION.deb"
 
 # Geçici dizini temizle
 rm -rf "$TEMP_DIR"
